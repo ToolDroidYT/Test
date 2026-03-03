@@ -1,0 +1,117 @@
+-- 1. Procedure: Add Employee (Simplified IF logic)
+DELIMITER $$
+CREATE PROCEDURE AddEmployee(
+    emp_id INT, 
+    f_name VARCHAR(50), 
+    l_name VARCHAR(50), 
+    sal DECIMAL(10,2), 
+    dept_id INT
+)
+BEGIN
+    IF (SELECT COUNT(*) FROM Employees WHERE EmployeeID = emp_id) > 0 THEN
+        ROLLBACK;
+    ELSE
+        START TRANSACTION;
+        
+        INSERT INTO Employees VALUES (emp_id, f_name, l_name, sal, dept_id);
+        
+        UPDATE Departments 
+        SET EmployeeCount = EmployeeCount + 1 
+        WHERE DepartmentID = dept_id;
+        
+        COMMIT;
+    END IF;
+END $$
+DELIMITER ;
+
+-- 2. Procedure: Increase Salary (Direct UPDATE without variables)
+DELIMITER $$
+CREATE PROCEDURE IncreaseSalary(emp_id INT, percent_increase DECIMAL(5,2))
+BEGIN
+    IF percent_increase <= 20.00 THEN
+        -- Insert history first using current salary
+        INSERT INTO SalaryHistory (EmployeeID, OldSalary, NewSalary)
+        SELECT emp_id, Salary, Salary + (Salary * (percent_increase / 100))
+        FROM Employees WHERE EmployeeID = emp_id;
+
+        -- Update salary directly
+        UPDATE Employees 
+        SET Salary = Salary + (Salary * (percent_increase / 100)) 
+        WHERE EmployeeID = emp_id;
+    END IF;
+END $$
+DELIMITER ;
+
+-- 3. Procedure: Transfer Employee (Minimal variables)
+DELIMITER $$
+CREATE PROCEDURE TransferEmployee(emp_id INT, new_dept_id INT)
+BEGIN
+    DECLARE old_dept_id INT;
+    
+    SELECT DepartmentID INTO old_dept_id FROM Employees WHERE EmployeeID = emp_id;
+
+    START TRANSACTION;
+    
+    UPDATE Employees SET DepartmentID = new_dept_id WHERE EmployeeID = emp_id;
+    
+    UPDATE Departments SET EmployeeCount = EmployeeCount - 1 WHERE DepartmentID = old_dept_id;
+    UPDATE Departments SET EmployeeCount = EmployeeCount + 1 WHERE DepartmentID = new_dept_id;
+    
+    COMMIT;
+END $$
+DELIMITER ;
+
+-- 4. Function: Calculate Annual Salary (Direct return)
+DELIMITER $$
+CREATE FUNCTION CalculateAnnualSalary(emp_id INT) 
+RETURNS DECIMAL(12,2)
+DETERMINISTIC
+BEGIN
+    RETURN (SELECT Salary * 12 FROM Employees WHERE EmployeeID = emp_id);
+END $$
+DELIMITER ;
+
+-- 5. Function: Tax Calculation (Basic IF/ELSE structure)
+DELIMITER $$
+CREATE FUNCTION CalculateTax(emp_id INT) 
+RETURNS DECIMAL(10,2)
+DETERMINISTIC
+BEGIN
+    DECLARE current_salary DECIMAL(10,2);
+    
+    SELECT Salary INTO current_salary FROM Employees WHERE EmployeeID = emp_id;
+
+    IF current_salary < 5000 THEN
+        RETURN current_salary * 0.05;
+    ELSEIF current_salary <= 8000 THEN
+        RETURN current_salary * 0.10;
+    ELSE
+        RETURN current_salary * 0.15;
+    END IF;
+END $$
+DELIMITER ;
+
+-- 6. Trigger: Prevent Negative Salary (Standard MySQL abort method)
+DELIMITER $$
+CREATE TRIGGER PreventNegativeSalary
+BEFORE INSERT ON Employees
+FOR EACH ROW
+BEGIN
+    IF NEW.Salary < 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Salary cannot be below zero.';
+    END IF;
+END $$
+DELIMITER ;
+
+-- 7. Trigger: Prevent Deleting Last Employee
+DELIMITER $$
+CREATE TRIGGER PreventLastEmployeeDelete
+BEFORE DELETE ON Employees
+FOR EACH ROW
+BEGIN
+    IF (SELECT COUNT(*) FROM Employees WHERE DepartmentID = OLD.DepartmentID) = 1 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Blocked: Last employee in department.';
+    END IF;
+END $$
+DELIMITER ;
+
