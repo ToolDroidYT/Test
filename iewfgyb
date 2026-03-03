@@ -1,0 +1,141 @@
+-- 1.
+DELIMITER $$
+CREATE FUNCTION CalculateYearsWorked(hire_date DATE) 
+RETURNS INT
+DETERMINISTIC
+BEGIN
+    RETURN TIMESTAMPDIFF(YEAR, hire_date, CURDATE());
+END $$
+DELIMITER ;
+
+
+-- 2.
+DELIMITER $$
+CREATE FUNCTION CalculateTotalPrice(quantity INT, unit_price DECIMAL(10,2)) 
+RETURNS DECIMAL(10,2)
+DETERMINISTIC
+BEGIN
+    RETURN quantity * unit_price;
+END $$
+DELIMITER ;
+
+
+-- 3 and 5.
+DELIMITER $$
+CREATE FUNCTION CategorizeEmployeeTenure(hire_date DATE) 
+RETURNS VARCHAR(20)
+DETERMINISTIC
+BEGIN
+    DECLARE tenure_years INT;
+    SET tenure_years = TIMESTAMPDIFF(YEAR, hire_date, CURDATE());
+    
+    IF tenure_years < 3 THEN
+        RETURN 'Junior';
+    ELSEIF tenure_years >= 3 AND tenure_years <= 7 THEN
+        RETURN 'Mid-level';
+    ELSE
+        RETURN 'Senior';
+    END IF;
+END $$
+DELIMITER ;
+
+
+
+-- 4.
+DELIMITER $$
+CREATE FUNCTION GetStockStatus(stock_qty INT) 
+RETURNS VARCHAR(20)
+DETERMINISTIC
+BEGIN
+    IF stock_qty <= 0 THEN
+        RETURN 'Out of Stock';
+    ELSEIF stock_qty < 20 THEN
+        RETURN 'Low Stock';
+    ELSE
+        RETURN 'In Stock';
+    END IF;
+END $$
+DELIMITER ;
+
+
+-- 5. (Same as 3.)
+
+
+-- 6.
+DELIMITER $$
+CREATE TRIGGER BeforeEmployeeInsert
+BEFORE INSERT ON employees
+FOR EACH ROW
+BEGIN
+    IF NEW.salary < 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: Salary cannot be negative.';
+    END IF;
+END $$
+DELIMITER ;
+
+
+-- 7.
+DELIMITER $$
+CREATE TRIGGER AfterOrderDetailInsert_UpdateStock
+AFTER INSERT ON order_details
+FOR EACH ROW
+BEGIN
+    UPDATE products
+    SET stock_quantity = stock_quantity - NEW.quantity
+    WHERE product_id = NEW.product_id;
+END $$
+DELIMITER ;
+
+
+
+-- 8.
+DELIMITER $$
+CREATE TRIGGER AfterEmployeeDelete
+AFTER DELETE ON employees
+FOR EACH ROW
+BEGIN
+    INSERT INTO employees_archive (employee_id, name, salary, deleted_at)
+    VALUES (OLD.employee_id, CONCAT(OLD.first_name, ' ', OLD.last_name), OLD.salary, NOW());
+END $$
+DELIMITER ;
+
+
+
+-- 9.
+DELIMITER $$
+CREATE TRIGGER AfterOrderDetailInsert_RecalculateTotal
+AFTER INSERT ON order_details
+FOR EACH ROW
+BEGIN
+    UPDATE orders
+    SET total_amount = (
+        SELECT COALESCE(SUM(quantity * unit_price), 0)
+        FROM order_details
+        WHERE order_id = NEW.order_id
+    )
+    WHERE order_id = NEW.order_id;
+END $$
+DELIMITER ;
+
+
+
+-- 10.
+DELIMITER $$
+CREATE TRIGGER BeforeCustomerDelete
+BEFORE DELETE ON customers
+FOR EACH ROW
+BEGIN
+    DECLARE active_order_count INT;
+    
+    SELECT COUNT(*) INTO active_order_count
+    FROM orders
+    WHERE customer_id = OLD.customer_id AND status = 'Active';
+
+    IF active_order_count > 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: Cannot delete a customer who has active orders.';
+    END IF;
+END $$
+DELIMITER ;
+
+
+
